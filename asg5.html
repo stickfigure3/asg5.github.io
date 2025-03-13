@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js Complete Example – Improved Vision with Skybox and Buildings</title>
+  <style>
+    body { margin: 0; }
+    canvas {
+      display: block;
+      /* Optionally, set a CSS background if desired */
+    }
+  </style>
+  <!-- Import map: maps bare module specifiers to CDN URLs -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.152.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+  import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+  import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+  import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
+  import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+  // Helper: Resize an image to a target width/height using an offscreen canvas.
+  function resizeImage(imageUrl, targetWidth, targetHeight) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = targetWidth;
+        offscreen.height = targetHeight;
+        const ctx = offscreen.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        offscreen.toBlob((blob) => {
+          const url = URL.createObjectURL(blob);
+          resolve(url);
+        });
+      };
+      img.onerror = reject;
+      img.src = imageUrl;
+    });
+  }
+
+  function main() {
+    // Initialize RectAreaLight data.
+    RectAreaLightUniformsLib.init();
+
+    // --- Renderer & Canvas ---
+    const canvas = document.querySelector('#c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x333333);
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.enabled = true; // <-- Added: enable shadows
+
+    // --- PerspectiveCamera (fov 45°, near 1, far 100) ---
+    const camera = new THREE.PerspectiveCamera(
+            45,
+            window.innerWidth / window.innerHeight,
+            1,
+            100
+    );
+    camera.position.set(0, 10, 20);
+
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.add(camera);
+    camera.updateProjectionMatrix();
+
+    // --- Skybox Background ---
+    Promise.all([
+      resizeImage('resources/images/beachpos-x.jpeg', 1024, 1024),
+      resizeImage('resources/images/beachneg-x.jpeg', 1024, 1024),
+      resizeImage('resources/images/beachpos-y.jpeg', 1024, 1024),
+      resizeImage('resources/images/beachneg-y.jpg', 1024, 1024),
+      resizeImage('resources/images/beachpos-z.jpeg', 1024, 1024),
+      resizeImage('resources/images/beachneg-z.jpg', 1024, 1024)
+    ]).then((urls) => {
+      const cubeTextureLoader = new THREE.CubeTextureLoader();
+      const skyboxTexture = cubeTextureLoader.load(urls);
+      scene.background = skyboxTexture;
+    }).catch((err) => {
+      console.error('Error resizing cubemap images:', err);
+    });
+
+    // --- OrbitControls ---
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 5, 0);
+    controls.update();
+
+    // --- Grid Helper (for orientation) ---
+    const gridHelper = new THREE.GridHelper(50, 50);
+    scene.add(gridHelper);
+
+    // --- Ground Plane ---
+    const planeSize = 40;
+    const textureLoader = new THREE.TextureLoader();
+    const checkerTexture = textureLoader.load('resources/images/checker.png');
+    checkerTexture.wrapS = THREE.RepeatWrapping;
+    checkerTexture.wrapT = THREE.RepeatWrapping;
+    checkerTexture.magFilter = THREE.NearestFilter;
+    checkerTexture.colorSpace = THREE.SRGBColorSpace;
+    const repeats = planeSize / 2;
+    checkerTexture.repeat.set(repeats, repeats);
+    const planeGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+    const planeMat = new THREE.MeshStandardMaterial({
+      map: checkerTexture,
+      side: THREE.DoubleSide,
+    });
+    const groundMesh = new THREE.Mesh(planeGeo, planeMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.receiveShadow = true; // <-- Added: ground receives shadows
+    scene.add(groundMesh);
+
+    // --- Additional Objects: Cube and Sphere ---
+    {
+      const cubeSize = 2;
+      const cubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+      const cubeMat = new THREE.MeshStandardMaterial({ color: '#8AC' });
+      const cubeMesh = new THREE.Mesh(cubeGeo, cubeMat);
+      cubeMesh.position.set(cubeSize + 1, cubeSize / 2, 0);
+      cubeMesh.castShadow = true;    // <-- Added: cube casts shadows
+      cubeMesh.receiveShadow = true; // <-- Added: cube receives shadows
+      scene.add(cubeMesh);
+    }
+    {
+      const sphereRadius = 1.5;
+      const sphereGeo = new THREE.SphereGeometry(sphereRadius, 32, 16);
+      const sphereMat = new THREE.MeshStandardMaterial({ color: '#CA8' });
+      const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+      sphereMesh.position.set(-sphereRadius - 1, sphereRadius + 2, 0);
+      sphereMesh.castShadow = true;    // <-- Added: sphere casts shadows
+      sphereMesh.receiveShadow = true; // <-- Added: sphere receives shadows
+      scene.add(sphereMesh);
+    }
+
+    // --- Load an OBJ/MTL Model (IronMan) ---
+    const mtlLoader = new MTLLoader();
+    mtlLoader.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        // Scale the model down to 3% of its original size.
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(0, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;    // <-- Added: loaded model meshes cast shadows
+                            child.receiveShadow = true; // <-- Added: loaded model meshes receive shadows
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+
+    // --- Load Another Model (Bugatti) ---
+    const mtlLoader1 = new MTLLoader();
+    mtlLoader1.load('resources/models/bugatti.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/bugatti.obj', (root) => {
+                        root.scale.set(0.8, 0.8, 0.8);
+                        root.updateMatrixWorld();
+                        root.position.set(-22, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading Bugatti OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading Bugatti MTL:', error);
+            });
+    const mtlLoaderbu = new MTLLoader();
+    mtlLoaderbu.load('resources/models/bugatti.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/bugatti.obj', (root) => {
+                        root.scale.set(0.8, 0.8, 0.8);
+                        root.updateMatrixWorld();
+                        root.position.set(22, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading Bugatti OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading Bugatti MTL:', error);
+            });
+    const mtlLoader2 = new MTLLoader();
+    mtlLoader2.load('resources/models/spider.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/spider.obj', (root) => {
+                        root.scale.set(0.1, 0.1, 0.1);
+                        root.updateMatrixWorld();
+                        root.position.set(10, 0, 15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading Bugatti OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading Bugatti MTL:', error);
+            });
+
+    const mtlLoader3 = new MTLLoader();
+    mtlLoader3.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-16.5, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+
+    const mtlLoader4 = new MTLLoader();
+    mtlLoader4.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-11, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+
+    const mtlLoader5 = new MTLLoader();
+    mtlLoader5.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-5.5, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader6 = new MTLLoader();
+    mtlLoader6.load('resources/models/dinodragon.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/dinodragon.obj', (root) => {
+                        root.rotation.y = - Math.PI / 2;
+                        root.scale.set(.8, .8, .8);
+                        root.updateMatrixWorld();
+                        root.position.set(15, 2, 15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader7 = new MTLLoader();
+    mtlLoader7.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(5.5, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader8 = new MTLLoader();
+    mtlLoader8.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(11, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader9 = new MTLLoader();
+    mtlLoader9.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(16.5, 0, -20);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader10 = new MTLLoader();
+    mtlLoader10.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-16.5, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader11 = new MTLLoader();
+    mtlLoader11.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-11, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader12 = new MTLLoader();
+    mtlLoader12.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(-6.5, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader13 = new MTLLoader();
+    mtlLoader13.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(0, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader14 = new MTLLoader();
+    mtlLoader14.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(5.5, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader15 = new MTLLoader();
+    mtlLoader15.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(11, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+    const mtlLoader16 = new MTLLoader();
+    mtlLoader16.load('resources/models/IronMan.mtl', (mtl) => {
+              mtl.preload();
+              if (mtl.materials && mtl.materials.Material) {
+                mtl.materials.Material.side = THREE.DoubleSide;
+              }
+              const objLoader = new OBJLoader();
+              objLoader.setMaterials(mtl);
+              objLoader.load('resources/models/IronMan.obj', (root) => {
+                        root.scale.set(0.03, 0.03, 0.03);
+                        root.updateMatrixWorld();
+                        root.position.set(16.5, 0, -15);
+                        root.traverse((child) => {
+                          if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                          }
+                        });
+                        scene.add(root);
+                      },
+                      undefined,
+                      (error) => {
+                        console.error('Error loading IronMan OBJ:', error);
+                      });
+            },
+            undefined,
+            (error) => {
+              console.error('Error loading IronMan MTL:', error);
+            });
+
+    // --- Load 10 Buildings Around the Scene ---
+    // Adjust buildingCount to the correct number of building files you have.
+
+    // --- Lights Setup ---
+    // Ambient Light: overall illumination.
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+
+    // Hemisphere Light: simulates a sky and ground.
+    const hemiLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 0.6);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    // Directional Light: simulates sunlight.
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(10, 20, 10);
+    dirLight.target.position.set(0, 5, 0);
+    dirLight.castShadow = true; // <-- Added: directional light casts shadows
+    scene.add(dirLight);
+    scene.add(dirLight.target);
+    const dirLightHelper = new THREE.DirectionalLightHelper(dirLight);
+    scene.add(dirLightHelper);
+
+    // Point Light: radiates light in all directions.
+    const pointLight = new THREE.PointLight(0xffffff, 1.0, 40);
+    pointLight.position.set(-10, 15, 10);
+    pointLight.castShadow = true; // <-- Added: point light casts shadows
+    scene.add(pointLight);
+    const pointLightHelper = new THREE.PointLightHelper(pointLight);
+    scene.add(pointLightHelper);
+
+    // Spot Light: a light with a cone.
+    const spotLight = new THREE.SpotLight(0xffffff, 1.0);
+    spotLight.position.set(10, 15, -10);
+    spotLight.target.position.set(0, 5, 0);
+    spotLight.angle = THREE.MathUtils.degToRad(45);
+    spotLight.penumbra = 0.2;
+    spotLight.castShadow = true; // <-- Added: spot light casts shadows
+    scene.add(spotLight);
+    scene.add(spotLight.target);
+    const spotLightHelper = new THREE.SpotLightHelper(spotLight);
+    scene.add(spotLightHelper);
+
+    // RectArea Light: rectangular light source.
+    const rectLight = new THREE.RectAreaLight(0xffffff, 1.0, 12, 4);
+    rectLight.position.set(0, 20, 0);
+    rectLight.rotation.x = THREE.MathUtils.degToRad(-90);
+    scene.add(rectLight);
+    const rectLightHelper = new RectAreaLightHelper(rectLight);
+    rectLight.add(rectLightHelper);
+
+    // --- Picking Setup ---
+    // Define a pick position in normalized device coordinates.
+    const pickPosition = { x: 0, y: 0 };
+
+    // Helper functions to get canvas-relative positions and convert them.
+    function getCanvasRelativePosition(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) * canvas.width  / rect.width,
+        y: (event.clientY - rect.top ) * canvas.height / rect.height,
+      };
+    }
+    function setPickPosition(event) {
+      const pos = getCanvasRelativePosition(event);
+      pickPosition.x = (pos.x / canvas.width ) * 2 - 1;
+      pickPosition.y = (pos.y / canvas.height) * -2 + 1;  // flip Y
+    }
+    function clearPickPosition() {
+      pickPosition.x = -100000;
+      pickPosition.y = -100000;
+    }
+    window.addEventListener('mousemove', setPickPosition);
+    window.addEventListener('mouseout', clearPickPosition);
+    window.addEventListener('mouseleave', clearPickPosition);
+    window.addEventListener('touchstart', (event) => {
+      event.preventDefault();
+      setPickPosition(event.touches[0]);
+    }, {passive: false});
+    window.addEventListener('touchmove', (event) => {
+      setPickPosition(event.touches[0]);
+    });
+    window.addEventListener('touchend', clearPickPosition);
+
+    // PickHelper: uses raycasting to determine which object is under the mouse.
+    class PickHelper {
+      constructor() {
+        this.raycaster = new THREE.Raycaster();
+        this.pickedObject = null;
+        this.pickedObjectSavedColor = 0;
+      }
+
+      pick(normalizedPosition, scene, camera, time) {
+        // Restore previous picked object's emissive color if it has an emissive property.
+        if (this.pickedObject) {
+          // Check if the material and 'emissive' property exist
+          if (this.pickedObject.material && 'emissive' in this.pickedObject.material) {
+            this.pickedObject.material.emissive.setHex(this.pickedObjectSavedColor);
+          }
+          this.pickedObject = null;
+        }
+
+        // Raycast
+        this.raycaster.setFromCamera(normalizedPosition, camera);
+        const intersectedObjects = this.raycaster.intersectObjects(scene.children, true);
+        if (intersectedObjects.length) {
+          this.pickedObject = intersectedObjects[0].object;
+          // Check if the material and 'emissive' property exist
+          const mat = this.pickedObject.material;
+          if (mat && 'emissive' in mat) {
+            // Save the original emissive color
+            this.pickedObjectSavedColor = mat.emissive.getHex();
+            // Change its emissive color
+            mat.emissive.setHex((time * 8) % 2 > 1 ? 0xFFFF00 : 0xFF0000);
+          }
+        }
+      }
+    }
+
+    const pickHelper = new PickHelper();
+
+    // --- GUI Helpers & Controls ---
+    class ColorGUIHelper {
+      constructor(object, prop) {
+        this.object = object;
+        this.prop = prop;
+      }
+      get value() {
+        return `#${this.object[this.prop].getHexString()}`;
+      }
+      set value(hexString) {
+        this.object[this.prop].set(hexString);
+      }
+    }
+    class DegRadHelper {
+      constructor(obj, prop) {
+        this.obj = obj;
+        this.prop = prop;
+      }
+      get value() {
+        return THREE.MathUtils.radToDeg(this.obj[this.prop]);
+      }
+      set value(v) {
+        this.obj[this.prop] = THREE.MathUtils.degToRad(v);
+      }
+    }
+    function makeXYZGUI(gui, vector3, name, onChangeFn) {
+      const folder = gui.addFolder(name);
+      folder.add(vector3, 'x', -20, 20).onChange(onChangeFn);
+      folder.add(vector3, 'y', -10, 20).onChange(onChangeFn);
+      folder.add(vector3, 'z', -20, 20).onChange(onChangeFn);
+      folder.open();
+    }
+    const gui = new GUI();
+    // AmbientLight controls.
+    const ambientFolder = gui.addFolder('AmbientLight');
+    ambientFolder.addColor(new ColorGUIHelper(ambientLight, 'color'), 'value').name('color');
+    ambientFolder.add(ambientLight, 'intensity', 0, 2, 0.01);
+    ambientFolder.open();
+    // HemisphereLight controls.
+    const hemiFolder = gui.addFolder('HemisphereLight');
+    hemiFolder.addColor(new ColorGUIHelper(hemiLight, 'color'), 'value').name('skyColor');
+    hemiFolder.addColor(new ColorGUIHelper(hemiLight, 'groundColor'), 'value').name('groundColor');
+    hemiFolder.add(hemiLight, 'intensity', 0, 2, 0.01);
+    hemiFolder.open();
+    // DirectionalLight controls.
+    const dirFolder = gui.addFolder('DirectionalLight');
+    dirFolder.addColor(new ColorGUIHelper(dirLight, 'color'), 'value').name('color');
+    dirFolder.add(dirLight, 'intensity', 0, 2, 0.01);
+    function updateDirLight() {
+      dirLight.target.updateMatrixWorld();
+      dirLightHelper.update();
+    }
+    makeXYZGUI(dirFolder, dirLight.position, 'position', updateDirLight);
+    makeXYZGUI(dirFolder, dirLight.target.position, 'target', updateDirLight);
+    dirFolder.open();
+    // PointLight controls.
+    const pointFolder = gui.addFolder('PointLight');
+    pointFolder.addColor(new ColorGUIHelper(pointLight, 'color'), 'value').name('color');
+    pointFolder.add(pointLight, 'intensity', 0, 2, 0.01);
+    pointFolder.add(pointLight, 'distance', 0, 100).onChange(() => {
+      pointLightHelper.update();
+    });
+    makeXYZGUI(pointFolder, pointLight.position, 'position', () => {
+      pointLightHelper.update();
+    });
+    pointFolder.open();
+    // SpotLight controls.
+    const spotFolder = gui.addFolder('SpotLight');
+    spotFolder.addColor(new ColorGUIHelper(spotLight, 'color'), 'value').name('color');
+    spotFolder.add(spotLight, 'intensity', 0, 2, 0.01);
+    spotFolder.add(new DegRadHelper(spotLight, 'angle'), 'value', 0, 90)
+            .name('angle')
+            .onChange(() => {
+              spotLightHelper.update();
+            });
+    spotFolder.add(spotLight, 'penumbra', 0, 1, 0.01);
+    makeXYZGUI(spotFolder, spotLight.position, 'position', () => {
+      spotLightHelper.update();
+    });
+    makeXYZGUI(spotFolder, spotLight.target.position, 'target', () => {
+      spotLightHelper.update();
+    });
+    spotFolder.open();
+    // RectAreaLight controls.
+    const rectFolder = gui.addFolder('RectAreaLight');
+    rectFolder.addColor(new ColorGUIHelper(rectLight, 'color'), 'value').name('color');
+    rectFolder.add(rectLight, 'intensity', 0, 2, 0.01);
+    rectFolder.add(rectLight, 'width', 0, 20);
+    rectFolder.add(rectLight, 'height', 0, 20);
+    rectFolder.add(new DegRadHelper(rectLight.rotation, 'x'), 'value', -180, 180).name('x rotation');
+    rectFolder.add(new DegRadHelper(rectLight.rotation, 'y'), 'value', -180, 180).name('y rotation');
+    rectFolder.add(new DegRadHelper(rectLight.rotation, 'z'), 'value', -180, 180).name('z rotation');
+    makeXYZGUI(rectFolder, rectLight.position, 'position');
+    rectFolder.open();
+
+    // --- Animation Loop ---
+    function animate(time) {
+      time *= 0.001;  // convert time to seconds
+
+      // Call the pick helper with the current normalized mouse position.
+      pickHelper.pick(pickPosition, scene, camera, time);
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  }
+
+  main();
+</script>
+</body>
+</html>
